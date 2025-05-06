@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>個人記帳本</title>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.17/index.global.min.js'></script>
+    <script>
+
+      document.addEventListener('DOMContentLoaded', function() {
+        var calendarEl = document.getElementById('calendar');
+        var calendar = new FullCalendar.Calendar(calendarEl, {
+          initialView: 'dayGridMonth'
+        });
+        calendar.render();
+      });
+
+      let chart;
+
+document.addEventListener('DOMContentLoaded', function () {
+    const ctx = document.getElementById('chart').getContext('2d');
+    chart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: {{ categories|tojson }},
+            datasets: [{
+                label: '分類支出統計',
+                data: {{ totals|tojson }},
+                backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#2ecc71', '#8e44ad']
+            }]
+        }
+    });
+})
+
+// 點擊空白區域就關閉 popup
+document.addEventListener('click', function (e) {
+    const popup = document.getElementById('popup');
+    const calendarEl = document.getElementById('calendar');
+    
+    // 如果點擊不是在 popup 內部、也不是在日曆元素上（避免干擾點擊事件），就關閉 popup
+    if (!popup.contains(e.target) && !calendarEl.contains(e.target)) {
+        popup.style.display = 'none';
+    }
+});
+
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+
+        form {
+            background: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        .dashboard {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .panel {
+            flex: 1 1 45%;
+            min-width: 350px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            background-color: #fafafa;
+        }
+
+        .record-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #fff;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+
+        .record-list ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .record-list li {
+            padding: 6px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        #calendar {
+            max-width: 100%;
+        }
+
+        input[type="text"], input[type="number"], input[type="date"], select {
+            padding: 5px;
+            margin: 5px 0;
+            width: 100%;
+        }
+
+        button {
+            padding: 8px 15px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>💸 我的記帳本</h1>
+
+    <form action="/add" method="post">
+        <label>日期: <input type="date" name="date" required></label><br>
+        <label>分類:
+            <select name="category">
+                <option value="餐飲">餐飲</option>
+                <option value="交通">交通</option>
+                <option value="娛樂">娛樂</option>
+                <option value="收入">收入</option>
+                <option value="其他">其他</option>
+            </select>
+        </label><br>
+        <label>金額: <input type="number" name="amount" step="0.01" required></label><br>
+        <label>備註: <input type="text" name="note"></label><br>
+        <button type="submit">新增紀錄</button>
+    </form>
+
+    <h2>📋 收支紀錄</h2>
+    <input type="text" id="recordSearch" placeholder="輸入關鍵字搜尋…" />
+    <div class="record-list">
+        <ul id="recordList">
+            {% for r in records %}
+            <li>{{ r[0] }}｜{{ r[1] }}｜{{ r[2] }} 元｜{{ r[3] }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div>
+        <h1> </h1>
+    </div>
+
+    <form method="post" action="/delete-all" onsubmit="return confirm('你確定要刪除所有紀錄嗎？這個動作無法復原。')">
+        <button type="submit" style="background-color: red; color: white;">刪除所有紀錄</button>
+    </form>
+
+    <div>
+        <h1> </h1>
+    </div>
+
+    <div class="dashboard">
+        <div style="margin-bottom:10px;">
+            <label>起始日: <input type="date" id="startDate"></label>
+            <label>結束日: <input type="date" id="endDate"></label>
+            <button onclick="updateChart()">查詢</button>
+        </div>
+        
+        <div style="margin-bottom:10px;">
+            <button onclick="quickRange('today')">今天</button>
+            <button onclick="quickRange('week')">本週</button>
+            <button onclick="quickRange('month')">本月</button>
+            <button onclick="quickRange('all')">全部</button>
+        </div>
+        
+        <div class="panel">
+            <h2>📊 分類統計</h2>
+            <canvas id="chart" width="400" height="400"></canvas>
+        </div>
+        <div class="panel">
+            <h2>🗓 月曆視圖</h2>
+            <div id="calendar"></div>
+        </div>
+    </div>
+
+    <div id="popup" style="display:none; position:fixed; top:20px; left:20px; background:#fff; border:1px solid #ccc; padding:1em;"></div>
+
+    <script>
+        // 篩選功能
+        document.getElementById("recordSearch").addEventListener("input", function() {
+            const filter = this.value.toLowerCase();
+            document.querySelectorAll("#recordList li").forEach(item => {
+                item.style.display = item.textContent.toLowerCase().includes(filter) ? "block" : "none";
+            });
+        });
+
+
+
+        // FullCalendar 月曆
+        document.addEventListener('DOMContentLoaded', function() {
+            const calendarEl = document.getElementById('calendar');
+            const popup = document.getElementById('popup');
+
+            const calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                events: '/calendar-data',
+                dateClick: function(info) {
+                    fetch(`/records/${info.dateStr}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.length === 0) {
+                                popup.innerHTML = `<b>${info.dateStr}</b><br>沒有紀錄`;
+                            } else {
+                                popup.innerHTML = `<b>${info.dateStr}</b><ul>` +
+                                    data.map(r => `<li>${r[0]}｜${r[1]} 元｜${r[2]}</li>`).join('') +
+                                    `</ul>`;
+                            }
+                            popup.style.display = 'block';
+                        });
+                }
+            });
+            calendar.render();
+        });
+
+        // 更新圖表
+        function updateChart() {
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+    if (!start || !end) {
+        alert("請選擇起始與結束日期");
+        return;
+    }
+
+    fetch(`/chart-data?start=${start}&end=${end}`)
+        .then(res => res.json())
+        .then(data => {
+            chart.data.labels = data.labels;
+            chart.data.datasets[0].data = data.totals;
+            chart.update();
+        });
+}
+
+function formatDate(date) {
+    return date.toISOString().split('T')[0];
+}
+
+function quickRange(type) {
+    const today = new Date();
+    let start, end;
+
+    if (type === 'today') {
+        start = end = formatDate(today);
+    } else if (type === 'week') {
+        const firstDay = new Date(today);
+        firstDay.setDate(today.getDate() - today.getDay());
+        start = formatDate(firstDay);
+        end = formatDate(today);
+    } else if (type === 'month') {
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        start = formatDate(firstDay);
+        end = formatDate(today);
+    } else if (type === 'all') {
+        fetch('/get-range')  // 後端提供最早與最晚日期
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('startDate').value = data.start;
+                document.getElementById('endDate').value = data.end;
+                updateChart();
+            });
+        return;
+    }
+
+    document.getElementById('startDate').value = start;
+    document.getElementById('endDate').value = end;
+    updateChart();
+}
+
+    </script>
+</body>
+</html>
